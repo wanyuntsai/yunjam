@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Yun Jam</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-disc"><div class="logo-disc-inner"></div></div>
+      <span class="logo-text" id="jamTitle" onclick="editTitle()" title="Click to rename">Yun Jam #1</span>
+      <span class="logo-edit-hint">✎ edit</span>
+    </div>
+    <div class="topbar-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">Select a track</span>
+    </div>
+    <div class="topbar-meta">build your own jam!</div>
+  </header>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Deck -->
+    <section class="deck">
+      <div class="now-playing" id="nowPlaying">
+        <div class="np-idle">
+          <span class="np-idle-icon">♩</span>
+          <span class="np-idle-text">click a track to load</span>
+        </div>
+      </div>
+
+      <div class="plinth">
+        <div class="tonearm-assembly" id="tonearmAssembly">
+          <div class="tonearm-pivot-dot"></div>
+          <div class="tonearm-rod"></div>
+          <div class="tonearm-head"></div>
+        </div>
+        <div class="slipmat"></div>
+        <div class="vinyl-disc" id="vinylDisc">
+          <div class="vinyl-grooves"></div>
+          <div class="vinyl-sheen"></div>
+          <div class="vinyl-label" id="vinylLabel">
+            <img id="vinylArt" src="" alt="" />
+          </div>
+          <div class="vinyl-hole"></div>
+        </div>
+      </div>
+
+      <div class="embed-zone">
+        <div class="embed-idle" id="embedIdle">
+          <span>↑ select a track to play</span>
+        </div>
+        <iframe id="spotifyEmbed" width="100%" height="80" frameborder="0"
+                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                loading="lazy"></iframe>
+      </div>
+    </section>
+
+    <!-- Queue -->
+    <aside class="queue">
+      <div class="queue-head">
+        <div class="queue-head-left">
+          <span class="queue-label">QUEUE</span>
+          <span class="queue-count" id="queueCount">0 TRACKS</span>
+        </div>
+        <div class="queue-actions">
+          <button class="q-btn" onclick="openAddModal()" title="Add a track">＋ Add</button>
+          <button class="q-btn q-btn-share" onclick="shareJam()" title="Share this Jam">⤴ Share</button>
+        </div>
+      </div>
+
+      <ol class="queue-list" id="queueList"></ol>
+
+      <div class="queue-foot">crafted by <strong>Yun</strong> &amp; Claude · 2026</div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- Add Track Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Add a Track</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <label class="field-label">Spotify Track URL</label>
+      <div class="url-row">
+        <input id="spotifyUrl" class="field-input" type="text"
+               placeholder="https://open.spotify.com/track/…"
+               oninput="onUrlInput()" />
+        <button class="fetch-btn" id="fetchBtn" onclick="fetchTrackInfo()" disabled>Fetch ↗</button>
+      </div>
+      <div class="fetch-status" id="fetchStatus"></div>
+
+      <div class="modal-preview" id="modalPreview" style="display:none">
+        <img id="previewCover" src="" alt="" />
+        <div>
+          <div id="previewTitle" class="preview-title"></div>
+          <div id="previewArtist" class="preview-artist"></div>
+        </div>
+      </div>
+
+      <label class="field-label" style="margin-top:16px">Mood tag <span class="field-hint">(optional)</span></label>
+      <input id="moodInput" class="field-input" type="text" placeholder="e.g. chill, upbeat, sad…" />
+    </div>
+
+    <div class="modal-footer">
+      <button class="modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="modal-add" id="addBtn" onclick="addTrack()" disabled>Add to Jam</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── DATA ────────────────────────────────────────────────────────────────────
+
+const DEFAULT_TRACKS = [
+  { id: '1vYy8VrbAU8Gedh6MESaDj', cover: 'images/americandreams.webp', title: 'American Dreams', artist: 'Matt Hartke'},
+  { id: '4w2iXqbH5RLNKe9RK4rvKe', cover: 'images/paperairplanes.jpg', title: 'Paper Airplanes', artist: 'Canyon City'},
+  { id: '1zZ5GJNC6lBpqqJk1DTcop', cover: 'images/nomanalive.jpeg',   title: 'No Man Alive',   artist: 'Tall Heights' },
+  { id: '4QpnTJdniesQvZfHfzLTXJ', cover: 'images/blessings.webp',       title: 'Blessings',      artist: 'Hollow Coves',  },
+];
+
+let tracks    = [];
+let jamTitle  = 'Yun Jam';
+let pendingTrack = null;
+let currentIndex = -1;
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+
+function init() {
+  const hash = location.hash;
+  if (hash.startsWith('#jam=')) {
+    try {
+      const data = JSON.parse(atob(decodeURIComponent(hash.slice(5))));
+      tracks   = data.tracks || [];
+      jamTitle = data.title  || 'Yun Jam';
+      showToast('Jam loaded from link ✓');
+    } catch(e) { loadFromStorage(); }
+  } else {
+    loadFromStorage();
+  }
+  document.getElementById('jamTitle').textContent = jamTitle;
+  renderQueue();
+}
+
+function loadFromStorage() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('yunJam'));
+    tracks   = saved.tracks || [...DEFAULT_TRACKS];
+    jamTitle = saved.title  || 'Yun Jam';
+  } catch(e) {
+    tracks   = [...DEFAULT_TRACKS];
+    jamTitle = 'Yun Jam';
+  }
+}
+
+function save() {
+  localStorage.setItem('yunJam', JSON.stringify({ title: jamTitle, tracks }));
+}
+
+// ─── QUEUE RENDER ─────────────────────────────────────────────────────────────
+
+function renderQueue() {
+  const list = document.getElementById('queueList');
+  document.getElementById('queueCount').textContent = `${tracks.length} TRACKS`;
+
+  if (tracks.length === 0) {
+    list.innerHTML = '<li class="queue-empty">No tracks yet — add one above ↑</li>';
+    return;
+  }
+
+  list.innerHTML = tracks.map((t, i) => `
+    <li class="queue-item ${i === currentIndex ? 'active' : ''}"
+        onclick="selectTrackByIndex(${i})">
+      <span class="qi-num">${String(i + 1).padStart(2, '0')}</span>
+      <div class="qi-cover-wrap">
+        <img class="qi-cover" src="${t.cover || ''}" alt="" onerror="this.style.visibility='hidden'">
+        <div class="qi-hover-play">▶</div>
+      </div>
+      <div class="qi-info">
+        <div class="qi-title">${t.title}</div>
+        <div class="qi-artist">${t.artist}</div>
+      </div>
+      <span class="qi-tag">${t.mood ? t.mood.split(' ')[0] : ''}</span>
+      <button class="qi-delete" onclick="event.stopPropagation(); deleteTrack(${i})" title="Remove">✕</button>
+    </li>
+  `).join('');
+}
+
+// ─── PLAYBACK ─────────────────────────────────────────────────────────────────
+
+function selectTrackByIndex(i) {
+  currentIndex = i;
+  const t = tracks[i];
+
+  renderQueue();
+
+  document.getElementById('vinylArt').src = t.cover || '';
+  document.getElementById('vinylDisc').classList.add('spinning');
+  document.getElementById('tonearmAssembly').classList.add('playing');
+  document.getElementById('statusDot').classList.add('live');
+  document.getElementById('statusText').textContent = `${t.title} — ${t.artist}`;
+
+  document.getElementById('nowPlaying').innerHTML = `
+    <div class="np-content">
+      <div class="np-eyebrow">NOW PLAYING</div>
+      <div class="np-title">${t.title}</div>
+      <div class="np-artist">${t.artist}</div>
+      ${t.mood ? `<div class="np-mood">${t.mood}</div>` : ''}
+    </div>`;
+
+  const embed = document.getElementById('spotifyEmbed');
+  embed.src = `https://open.spotify.com/embed/track/${t.id}?utm_source=generator&theme=0`;
+  embed.style.display = 'block';
+  document.getElementById('embedIdle').style.display = 'none';
+}
+
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+
+function deleteTrack(i) {
+  tracks.splice(i, 1);
+  if (currentIndex === i) currentIndex = -1;
+  else if (currentIndex > i) currentIndex--;
+  save();
+  renderQueue();
+}
+
+// ─── EDIT TITLE ───────────────────────────────────────────────────────────────
+
+function editTitle() {
+  const el = document.getElementById('jamTitle');
+  const current = el.textContent;
+  const input = document.createElement('input');
+  input.className = 'title-edit-input';
+  input.value = current;
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function done() {
+    const newTitle = input.value.trim() || current;
+    jamTitle = newTitle;
+    save();
+    const span = document.createElement('span');
+    span.id = 'jamTitle';
+    span.className = 'logo-text';
+    span.title = 'Click to rename';
+    span.textContent = newTitle;
+    span.onclick = editTitle;
+    input.replaceWith(span);
+  }
+
+  input.onblur = done;
+  input.onkeydown = e => { if (e.key === 'Enter') done(); if (e.key === 'Escape') { input.value = current; done(); } };
+}
+
+// ─── SHARE ────────────────────────────────────────────────────────────────────
+
+function shareJam() {
+  const payload = encodeURIComponent(btoa(JSON.stringify({ title: jamTitle, tracks })));
+  const url = `${location.origin}${location.pathname}#jam=${payload}`;
+  navigator.clipboard.writeText(url)
+    .then(() => showToast('Link copied to clipboard ✓'))
+    .catch(() => {
+      prompt('Copy this link:', url);
+    });
+}
+
+// ─── ADD MODAL ────────────────────────────────────────────────────────────────
+
+function openAddModal() {
+  document.getElementById('spotifyUrl').value = '';
+  document.getElementById('moodInput').value = '';
+  document.getElementById('fetchStatus').textContent = '';
+  document.getElementById('modalPreview').style.display = 'none';
+  document.getElementById('fetchBtn').disabled = true;
+  document.getElementById('addBtn').disabled = true;
+  pendingTrack = null;
+  document.getElementById('modalOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('spotifyUrl').focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+function onUrlInput() {
+  const val = document.getElementById('spotifyUrl').value.trim();
+  const hasId = extractTrackId(val);
+  document.getElementById('fetchBtn').disabled = !hasId;
+}
+
+function extractTrackId(url) {
+  const m = url.match(/track\/([A-Za-z0-9]+)/);
+  return m ? m[1] : null;
+}
+
+async function fetchTrackInfo() {
+  const url = document.getElementById('spotifyUrl').value.trim();
+  const trackId = extractTrackId(url);
+  if (!trackId) return;
+
+  const statusEl = document.getElementById('fetchStatus');
+  const fetchBtn = document.getElementById('fetchBtn');
+  fetchBtn.textContent = '…';
+  fetchBtn.disabled = true;
+  statusEl.textContent = 'Fetching…';
+  statusEl.className = 'fetch-status';
+
+  try {
+    const res  = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/track/${trackId}`);
+    const data = await res.json();
+
+    // oEmbed returns title as "Song – Artist" or just title
+    // author_name is the artist
+    const title  = data.title || '';
+    const artist = data.author_name || '';
+    const cover  = data.thumbnail_url || '';
+
+    pendingTrack = { id: trackId, cover, title, artist, mood: '' };
+
+    document.getElementById('previewCover').src = cover;
+    document.getElementById('previewTitle').textContent = title;
+    document.getElementById('previewArtist').textContent = artist;
+    document.getElementById('modalPreview').style.display = 'flex';
+
+    statusEl.textContent = '✓ Track found';
+    statusEl.className = 'fetch-status ok';
+    document.getElementById('addBtn').disabled = false;
+  } catch(e) {
+    statusEl.textContent = '✗ Could not fetch — check the URL';
+    statusEl.className = 'fetch-status err';
+  }
+
+  fetchBtn.textContent = 'Fetch ↗';
+  fetchBtn.disabled = false;
+}
+
+function addTrack() {
+  if (!pendingTrack) return;
+  pendingTrack.mood = document.getElementById('moodInput').value.trim();
+  tracks.push(pendingTrack);
+  save();
+  renderQueue();
+  closeModal();
+  showToast(`"${pendingTrack.title}" added ✓`);
+  pendingTrack = null;
+}
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ─── START ────────────────────────────────────────────────────────────────────
+init();
+</script>
+
+</body>
+</html>
